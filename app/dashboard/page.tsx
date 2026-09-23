@@ -7,6 +7,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Loader2, ChevronDown, ChevronRight, CheckCircle2, DollarSign, MessageCircle } from 'lucide-react'
 
+// Lojas do grupo. A chave é o valor gravado na coluna "loja" do Supabase.
+const LOJAS: Record<string, { nome: string; badge: string }> = {
+  atacado_mania: { nome: 'Atacado Mania', badge: 'bg-slate-200 text-slate-800' },
+  calcados_online: { nome: 'Calçados Online', badge: 'bg-orange-100 text-orange-800' },
+  calce_mania: { nome: 'Calce Mania', badge: 'bg-purple-100 text-purple-800' },
+}
+
+function nomeLoja(loja: string) {
+  return LOJAS[loja]?.nome || loja
+}
+
 export default function DashboardPage() {
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -16,6 +27,7 @@ export default function DashboardPage() {
   const [dataInicio, setDataInicio] = useState('')
   const [dataFim, setDataFim] = useState('')
   const [mostrarTodos, setMostrarTodos] = useState(false)
+  const [lojaFiltro, setLojaFiltro] = useState('todas')
 
   useEffect(() => {
     checkAuth()
@@ -97,6 +109,8 @@ export default function DashboardPage() {
         lead_id: item.id,
         lead_type: 'atacado',
         tipo: 'Atacado',
+        // A tabela de atacado não tem coluna "loja": é sempre Atacado Mania
+        loja: 'atacado_mania',
         vendedor: item.vendedor_nome,
         vendedor_telefone: item.vendedor_telefone,
         cliente: item.nome_cliente,
@@ -116,6 +130,7 @@ export default function DashboardPage() {
         lead_id: item.id,
         lead_type: 'varejo',
         tipo: 'Varejo',
+        loja: item.loja || 'atacado_mania',
         vendedor: item.vendedor_nome,
         vendedor_telefone: item.vendedor_telefone,
         cliente: item.nome_cliente,
@@ -196,6 +211,8 @@ export default function DashboardPage() {
       : (dataInicio && dataFim 
         ? `${new Date(dataInicio).toLocaleDateString('pt-BR')} - ${new Date(dataFim).toLocaleDateString('pt-BR')}` 
         : 'Mês Atual')
+
+    const lojaTexto = lojaFiltro === 'todas' ? 'Todas as lojas' : nomeLoja(lojaFiltro)
     
     // Criar HTML para PDF
     const html = `
@@ -221,7 +238,7 @@ export default function DashboardPage() {
       </head>
       <body>
         <h1>Relatório de Leads - ${vendedor}</h1>
-        <div class="periodo">Período: ${periodo}</div>
+        <div class="periodo">Período: ${periodo} &nbsp;|&nbsp; Loja: ${lojaTexto}</div>
         
         <div class="metricas">
           <div class="metrica">
@@ -248,6 +265,7 @@ export default function DashboardPage() {
               <th>Cliente</th>
               <th>Telefone</th>
               <th>Cidade</th>
+              <th>Loja</th>
               <th>Tipo</th>
               <th>Data</th>
               <th>Respondido</th>
@@ -260,6 +278,7 @@ export default function DashboardPage() {
                 <td>${lead.cliente || '-'}</td>
                 <td>${lead.telefone || '-'}</td>
                 <td>${lead.cidade || '-'}</td>
+                <td>${nomeLoja(lead.loja)}</td>
                 <td>${lead.tipo}</td>
                 <td>${new Date(lead.data).toLocaleDateString('pt-BR')}</td>
                 <td class="${lead.respondido ? 'respondido-sim' : 'respondido-nao'}">${lead.respondido ? 'Sim' : 'Não'}</td>
@@ -289,7 +308,7 @@ export default function DashboardPage() {
   }
 
   // Filtrar leads pelo período
-  const leadsFiltrados = mostrarTodos ? leads : leads.filter(lead => {
+  const leadsPeriodo = mostrarTodos ? leads : leads.filter(lead => {
     if (!dataInicio && !dataFim) {
       // Se não houver filtro, mostrar apenas mês atual
       const hoje = new Date()
@@ -318,6 +337,11 @@ export default function DashboardPage() {
     return true
   })
 
+  // Filtrar pela loja selecionada
+  const leadsFiltrados = lojaFiltro === 'todas'
+    ? leadsPeriodo
+    : leadsPeriodo.filter(lead => lead.loja === lojaFiltro)
+
   // Vendedores inativos (saíram da empresa)
   const vendedoresInativos = ['Sandra Elena', 'Armando', 'Magdalena', 'Maria', 'Natália', 'Ana Gabriela']
 
@@ -345,6 +369,12 @@ export default function DashboardPage() {
   const taxaConversao = leadsAtivos.length > 0 
     ? ((totalConvertidos / leadsAtivos.length) * 100).toFixed(1) 
     : '0'
+
+  // Total de leads por loja, respeitando o período selecionado
+  const totaisPorLoja = Object.keys(LOJAS).reduce((acc, loja) => {
+    acc[loja] = leadsPeriodo.filter(l => l.loja === loja).length
+    return acc
+  }, {} as Record<string, number>)
 
   if (loading) {
     return (
@@ -413,6 +443,31 @@ export default function DashboardPage() {
             <p className="text-xs text-slate-500 mt-2">
               {mostrarTodos ? '* Mostrando todos os leads' : (!dataInicio && !dataFim ? '* Mostrando apenas leads do mês atual' : '* Período personalizado')}
             </p>
+
+            <div className="mt-4 pt-4 border-t">
+              <label className="text-sm font-medium text-slate-700 block mb-2">Loja</label>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={() => setLojaFiltro('todas')}
+                  variant={lojaFiltro === 'todas' ? 'default' : 'outline'}
+                  size="sm"
+                  className={lojaFiltro === 'todas' ? '' : 'bg-transparent'}
+                >
+                  Todas ({leadsPeriodo.length})
+                </Button>
+                {Object.entries(LOJAS).map(([chave, info]) => (
+                  <Button
+                    key={chave}
+                    onClick={() => setLojaFiltro(chave)}
+                    variant={lojaFiltro === chave ? 'default' : 'outline'}
+                    size="sm"
+                    className={lojaFiltro === chave ? '' : 'bg-transparent'}
+                  >
+                    {info.nome} ({totaisPorLoja[chave] || 0})
+                  </Button>
+                ))}
+              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -423,6 +478,9 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-slate-900">{leadsAtivos.length}</div>
+              {lojaFiltro !== 'todas' && (
+                <p className="text-sm text-slate-500 mt-1">{nomeLoja(lojaFiltro)}</p>
+              )}
             </CardContent>
           </Card>
 
@@ -466,7 +524,12 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Leads por Vendedor</CardTitle>
+            <CardTitle>
+              Leads por Vendedor
+              {lojaFiltro !== 'todas' && (
+                <span className="text-base font-normal text-slate-500"> — {nomeLoja(lojaFiltro)}</span>
+              )}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {vendedores.length === 0 ? (
@@ -478,6 +541,12 @@ export default function DashboardPage() {
                   const isExpanded = expandedVendedores.has(vendedor)
                   const vendedorRespondidos = vendedorLeads.filter(l => l.respondido).length
                   const vendedorConvertidos = vendedorLeads.filter(l => l.convertido).length
+
+                  // Contagem por loja (Atacado Mania ainda separa atacado x varejo)
+                  const contAtacado = vendedorLeads.filter(l => l.loja === 'atacado_mania' && l.tipo === 'Atacado').length
+                  const contVarejo = vendedorLeads.filter(l => l.loja === 'atacado_mania' && l.tipo === 'Varejo').length
+                  const contCalcados = vendedorLeads.filter(l => l.loja === 'calcados_online').length
+                  const contCalce = vendedorLeads.filter(l => l.loja === 'calce_mania').length
                   
                   return (
                     <div key={vendedor} className="border rounded-lg overflow-hidden">
@@ -526,13 +595,27 @@ export default function DashboardPage() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <div className="flex gap-2">
-                              <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-800">
-                                Atacado: {vendedorLeads.filter(l => l.tipo === 'Atacado').length}
-                              </span>
-                              <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-800">
-                                Varejo: {vendedorLeads.filter(l => l.tipo === 'Varejo').length}
-                              </span>
+                            <div className="flex flex-wrap gap-2 justify-end">
+                              {contAtacado > 0 && (
+                                <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-800">
+                                  Atacado: {contAtacado}
+                                </span>
+                              )}
+                              {contVarejo > 0 && (
+                                <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-800">
+                                  Varejo: {contVarejo}
+                                </span>
+                              )}
+                              {contCalcados > 0 && (
+                                <span className={`text-xs px-2 py-1 rounded-full ${LOJAS.calcados_online.badge}`}>
+                                  Calçados Online: {contCalcados}
+                                </span>
+                              )}
+                              {contCalce > 0 && (
+                                <span className={`text-xs px-2 py-1 rounded-full ${LOJAS.calce_mania.badge}`}>
+                                  Calce Mania: {contCalce}
+                                </span>
+                              )}
                             </div>
                             <Button
                               onClick={(e) => {
@@ -559,15 +642,20 @@ export default function DashboardPage() {
                               }`}>
                                 <div className="flex justify-between items-start gap-4">
                                   <div className="flex-1">
-                                    <div className="flex items-center gap-2 mb-2">
+                                    <div className="flex items-center gap-2 mb-2 flex-wrap">
                                       <h4 className="font-semibold text-slate-900">{lead.cliente}</h4>
-                                      <span className={`text-xs px-2 py-1 rounded-full ${
-                                        lead.tipo === 'Atacado' 
-                                          ? 'bg-blue-100 text-blue-800' 
-                                          : 'bg-green-100 text-green-800'
-                                      }`}>
-                                        {lead.tipo}
+                                      <span className={`text-xs px-2 py-1 rounded-full ${LOJAS[lead.loja]?.badge || 'bg-slate-200 text-slate-800'}`}>
+                                        {nomeLoja(lead.loja)}
                                       </span>
+                                      {lead.loja === 'atacado_mania' && (
+                                        <span className={`text-xs px-2 py-1 rounded-full ${
+                                          lead.tipo === 'Atacado' 
+                                            ? 'bg-blue-100 text-blue-800' 
+                                            : 'bg-green-100 text-green-800'
+                                        }`}>
+                                          {lead.tipo}
+                                        </span>
+                                      )}
                                       {lead.convertido && (
                                         <span className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-800 flex items-center gap-1">
                                           <DollarSign className="h-3 w-3" />
